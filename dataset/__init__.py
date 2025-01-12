@@ -1,13 +1,17 @@
 import scanpy as sc
 import numpy as np
-
+import random
 class DiffusionDataset:
     def __init__(self):
         self.adata = DiffusionDataset.getSingleCellSource()
         self.bulkRNA = DiffusionDataset.getBulkRNAData(self)
+
+    @staticmethod
     def getSingleCellData():
         adata = sc.datasets.pbmc3k()
         return adata
+    
+    @staticmethod
     def getSingleCellSource():
         adata = DiffusionDataset.getSingleCellData()
         adata.obs_names_make_unique()
@@ -26,22 +30,36 @@ class DiffusionDataset:
         sc.pp.neighbors(adata, use_rep="X_pca", n_neighbors=15, metric='cosine')
         sc.tl.leiden(adata, resolution=0.8)
         return adata
-    def getBulkRNAData(self):
+    def getBulkRNAData(self, numBulk=100, cellsPerBulk=20):
         adata = self.adata
         bulkRNADict = {}
-        for cellType in adata.obs["leiden"]:
-            subset = adata[adata.obs["leiden"] == cellType]    
-            bulkRNA = subset.X.sum(axis=0)
-            bulkRNADict[cellType] = np.asarray(bulkRNA).flatten()
-            # print(f"Cell type {cellType}: bulk RNA shape {bulkRNADict[cellType].shape}")
+        uniqueCellType = adata.obs["leiden"].unique()
+        cellTypeProportion = {cellType: random.uniform(0.05,0.2) for cellType in uniqueCellType}
+        totalProportion = sum(cellTypeProportion.values())
+        cellTypeProportion = {k: v/totalProportion for k, v in cellTypeProportion.items()}
+        # print("細胞類型及其細胞數量:")
+        # for cellType in uniqueCellType:
+        #     num_cells = adata.obs[adata.obs["leiden"] == cellType].shape[0]
+        #     print(f"Cell type {cellType}: {num_cells} cells")
+        for bulk_idx in range(numBulk):
+            selectedCells = []
+            for cellType, proportion in cellTypeProportion.items():
+                numCells = int(cellsPerBulk * proportion)
+                subset = adata[adata.obs["leiden"] == cellType]
+                replace = subset.n_obs < numCells
+                selectedIndices = np.random.choice(subset.n_obs, numCells, replace=replace)
+                # print("selecI:",selectedIndices)
+                selectedCells.append(subset.X[selectedIndices,:].toarray())
+            bulkExpression = np.vstack(selectedCells).mean(axis=0)
+            # print("expression",bulkExpression)
+            bulkRNADict[f"Bulk_{bulk_idx}"] = np.asarray(bulkExpression).flatten()
+        # print("bulkRNADict",bulkRNADict)
         return bulkRNADict
-    
-
 if __name__ == "__main__":
     data = DiffusionDataset()
     adata = data.adata
     bulkRNA = data.bulkRNA
-    print(bulkRNA)
+    # print(bulkRNA)
     # print(adata)
     # print(bulkRNA.shape)
     # print(adata.obs["leiden"])
