@@ -5,11 +5,11 @@ import random
 class DiffusionDataset:
     def __init__(self):
         self.adata = DiffusionDataset.getSingleCellSource()
-        self.bulkRNA, self.pair = DiffusionDataset.getBulkRNAData(self)
+        self.bulkRNA = DiffusionDataset.getBulkRNASource()
 
     @staticmethod
     def getSingleCellData():
-        adata = sc.datasets.pbmc3k()
+        adata = sc.read_mtx("data/GSM4041646_3_cell-line_mixture.cell_ranger.matrix.mtx")
         return adata
     
     @staticmethod
@@ -31,57 +31,17 @@ class DiffusionDataset:
         sc.pp.neighbors(adata, use_rep="X_pca", n_neighbors=15, metric='cosine')
         sc.tl.leiden(adata, resolution=0.8)
         return adata
-    def getBulkRNAData(self, numBulk=100, cellsPerBulk=50):
-        """
-        生成 bulk RNA 與對應的單細胞 pair data，並保存為 CSV 文件。
-        """
-        adata = self.adata
-        bulkRNADict = {}
-        bulkRNAPairs = {}
-        unique_cell_types = adata.obs["leiden"].unique()
-
-        # 隨機生成不同細胞類型的比例，總和為 1
-        cell_type_proportions = {cell_type: random.uniform(0.05, 0.2) for cell_type in unique_cell_types}
-        total_proportion = sum(cell_type_proportions.values())
-        cell_type_proportions = {k: v / total_proportion for k, v in cell_type_proportions.items()}
-
-        # 生成 numBulk 個 bulk RNA 样本
-        for bulk_idx in range(numBulk):
-            selected_cells = []
-            selected_indices = []
-            for cell_type, proportion in cell_type_proportions.items():
-                # 按比例選擇每個細胞類型中的細胞數量
-                num_cells = int(cellsPerBulk * proportion)
-                subset = adata[adata.obs["leiden"] == cell_type]
-                indices = np.random.choice(subset.n_obs, num_cells, replace=False)
-                selected_indices.extend(subset.obs_names[indices].tolist())
-                selected_cells.append(subset.X[indices, :].toarray())
-
-            # 將選中的細胞進行加權平均，生成 bulk RNA 樣本
-            bulk_expression = np.vstack(selected_cells).mean(axis=0)
-            bulk_id = f"Bulk_{bulk_idx}"
-            bulkRNADict[bulk_id] = np.asarray(bulk_expression).flatten()
-            bulkRNAPairs[bulk_id] = selected_indices
-
-        # 保存 bulk RNA 数据为 CSV 文件
-        bulkRNA_df = pd.DataFrame.from_dict(bulkRNADict, orient='index', columns=adata.var_names)
-        bulkRNA_df.to_csv("bulk_rna_data.csv", index=True, index_label="SampleID")
-
-        # 保存 pair data 为 CSV 文件
-        pair_data = []
-        for bulk_id, cell_ids in bulkRNAPairs.items():
-            pair_data.append({"BulkID": bulk_id, "SingleCellIDs": ",".join(cell_ids)})
-        pair_df = pd.DataFrame(pair_data)
-        pair_df.to_csv("bulk_rna_pairs.csv", index=False)
-
-        return bulkRNA_df, pair_df
+    def getBulkRNAData():
+        data = pd.read_excel("data/GSE136148_Bulk_rawgenetable.xlsx", sheet_name= "3 Cell-line Bulk", index_col= 0)
+        return data
+    def getBulkRNASource():
+        data = DiffusionDataset.getBulkRNAData()
+        total = data.sum().values[0]
+        dataNormalized = (data / total) * 1e4
+        dataLog1p = np.log1p(dataNormalized)
+        return dataLog1p
 if __name__ == "__main__":
     data = DiffusionDataset()
-    adata = data.adata
-    bulkRNA = data.bulkRNA
-    pair = data.pair
-    print(pair)
-    # print(bulkRNA)
-    # print(adata)
-    # print(bulkRNA.shape)
-    # print(adata.obs["leiden"])
+    print(f'scRNA-seq:{data.adata}')
+    print(f'bulkRNA:{data.bulkRNA}')
+    
